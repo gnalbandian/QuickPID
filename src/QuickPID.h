@@ -2,9 +2,72 @@
 #ifndef QuickPID_h
 #define QuickPID_h
 
+#include <RunningAverage.h>
+
+class AutoTunePID {
+    public:
+        AutoTunePID();
+        AutoTunePID(float *input, float *output, uint8_t tuningRule, bool printOrPlotter = false); // Should't also consider direction?
+        ~AutoTunePID(){};
+
+        void reset();
+        void autoTuneConfig(const byte outputStep, const byte hysteresis, const int setpoint, const int output);
+        bool autoTuneLoop();
+        void setAutoTuneConstants(float* kp, float* ki, float* kd);
+    
+    private:
+
+        float *_input = nullptr;     // Pointers to the Input, Output, and Setpoint variables. This creates a
+        float *_output = nullptr;    // hard link between the variables and the PID, freeing the user from having
+        // float *mySetpoint = nullptr;  // to constantly tell us what these values are. With pointers we'll just know.
+
+        uint8_t _autoTuneStage = 0;
+        uint8_t _tuningRule = 0;
+        byte _outputStep;
+        byte _hysteresis;
+        int _atSetpoint;  // 1/3 of 10-bit ADC matches 8-bit PWM value of 85 for symetrical waveform
+        int _atOutput;
+
+        bool _printOrPlotter = false;
+
+        uint32_t _t0, _t1, _t2, _t3;
+        float _Ku, _Tu, _td, _kp, _ki, _kd, _rdAvg, _peakHigh, _peakLow;
+
+         const uint16_t RulesContants[10][3] =
+                                { //ckp,  cki, ckd x 1000
+                                    { 450,  540,   0 },  // ZIEGLER_NICHOLS_PI
+                                    { 600, 176,  75 },  // ZIEGLER_NICHOLS_PID
+                                    { 313,  142,   0 },  // TYREUS_LUYBEN_PI
+                                    { 454,  206,  72 },  // TYREUS_LUYBEN_PID
+                                    { 303, 1212,   0 },  // CIANCONE_MARLIN_PI
+                                    { 303, 1333,  37 },  // CIANCONE_MARLIN_PID
+                                    {   0,    0,   0 },  // AMIGOF_PID
+                                    { 700, 1750, 105 },  // PESSEN_INTEGRAL_PID
+                                    { 333,  667, 111 },  // SOME_OVERSHOOT_PID
+                                    { 200,  400,  67 },  // NO_OVERSHOOT_PID
+                                };
+        
+        RunningAverage<float, 5> inputAvg;
+
+};
+
 class QuickPID {
 
   public:
+
+    // enum tuningMethod : uint8_t
+    // {
+    //     ZIEGLER_NICHOLS_PI,
+    //     ZIEGLER_NICHOLS_PID,
+    //     TYREUS_LUYBEN_PI,
+    //     TYREUS_LUYBEN_PID,
+    //     CIANCONE_MARLIN_PI,
+    //     CIANCONE_MARLIN_PID,
+    //     AMIGOF_PID,
+    //     PESSEN_INTEGRAL_PID,
+    //     SOME_OVERSHOOT_PID,
+    //     NO_OVERSHOOT_PID
+    // };
 
     // controller mode
     typedef enum { MANUAL = 0, AUTOMATIC = 1 } mode_t;
@@ -28,7 +91,9 @@ class QuickPID {
     bool Compute();
 
     // Automatically determines and sets the tuning parameters Kp, Ki and Kd. Use this in the setup loop.
-    void AutoTune(int inputPin, int outputPin, int tuningRule, int Print, uint32_t timeout);
+    // void AutoTune(int inputPin, int outputPin, int tuningRule, int Print, uint32_t timeout);
+    void AutoTune(uint8_t tuningRule);
+    void clearAutoTune();
 
     // Sets and clamps the output to a specific range (0-255 by default).
     void SetOutputLimits(int Min, int Max);
@@ -56,6 +121,8 @@ class QuickPID {
     mode_t GetMode();
     direction_t GetDirection();
     int analogReadFast(int ADCpin);
+
+    AutoTunePID *autoTune;
 
   private:
 

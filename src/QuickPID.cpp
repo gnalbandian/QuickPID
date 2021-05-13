@@ -53,8 +53,8 @@ bool QuickPID::Compute() {
   uint32_t timeChange = (now - lastTime);
 
   if (timeChange >= sampleTimeUs) {  // Compute the working error variables
-    int input = *myInput;
-    int dInput = input - lastInput;
+    int input = *myInput; // Shouldn't this be float
+    int dInput = input - lastInput; // Shouldn't this be float
     error = *mySetpoint - input;
     if (controllerDirection == REVERSE) {
       error = -error;
@@ -203,4 +203,177 @@ int QuickPID::analogReadFast(int ADCpin) {
 #else
   return analogRead(ADCpin);
 # endif
+}
+
+void QuickPID::AutoTune(uint8_t tuningRule)
+{
+    autoTune = new AutoTunePID(myInput, myOutput, (uint8_t)tuningRule);
+}
+
+void QuickPID::clearAutoTune()
+{
+    if(autoTune)
+        delete autoTune;
+}
+
+
+AutoTunePID::AutoTunePID()
+{
+    _input = nullptr;
+    _output = nullptr;
+    
+
+    reset();
+}
+AutoTunePID::AutoTunePID(float *input, float *output, uint8_t tuningRule, bool printOrPlotter) // TODO: Direction should also be considered for autotuning
+{
+    AutoTunePID();
+
+    _input = input;
+    _output = output;
+    _tuningRule = tuningRule;
+    _printOrPlotter = printOrPlotter;
+}
+void AutoTunePID::reset()
+{
+    _t0 = 0;
+    _t1 = 0;
+    _t2 = 0;
+    _t3 = 0;
+    _Ku = 0.0;
+    _Tu = 0.0;
+    _td = 0.0; 
+    _kp = 0.0;
+    _ki = 0.0;
+    _kd = 0.0;
+    _rdAvg = 0.0;
+    _peakHigh = 0.0;
+    _peakLow = 0.0;
+}
+void AutoTunePID::autoTuneConfig(const byte outputStep, const byte hysteresis, const int atSetpoint, const int atOutput)
+{
+    _outputStep = outputStep; //Should/could be float ? Maybe desired decimal steps
+    _hysteresis = hysteresis; //Should/could be float ? Maybe desired decimal hysteresis
+    _atSetpoint = atSetpoint; //Should/could be float ? Maybe desired decimal setpoint
+    _atOutput = atOutput; //Should/could be float ?  Maybe desired decimal atOutput
+}
+bool AutoTunePID::autoTuneLoop()
+{
+    switch (_autoTuneStage) {
+    case 0:
+      _peakHigh = _atSetpoint;
+      _peakLow = _atSetpoint;
+      if (_printOrPlotter == 1) Serial.print(F("Stabilizing (33%) →"));
+    //   for (int i = 0; i < 16; i++) _input; // initialize
+      *_output = 0;
+      _autoTuneStage++;
+      break;
+    case 1: // start coarse adjust
+      if (*_input < (_atSetpoint - _hysteresis)) {
+        *_output = _atOutput + 20; // shouldn't output limits be considered? SetOutputLimits() ???
+        _autoTuneStage++;
+      }
+      break;
+    case 2: // start fine adjust
+      if (*_input > _atSetpoint) {
+        *_output = _atOutput - _outputStep; // shouldn't output limits be considered? SetOutputLimits() ???
+        _autoTuneStage++;
+      }
+      break;
+    case 3: // run AutoTune
+      if (*_input < _atSetpoint) {
+        if (_printOrPlotter == 1) Serial.print(F(" Running AutoTune"));
+        *_output = _atOutput + _outputStep; // shouldn't output limits be considered? SetOutputLimits() ???
+        _autoTuneStage++;
+      }
+      break;
+    case 4: // get t0
+      if (*_input > _atSetpoint) {
+        _t0 = micros();
+        if (_printOrPlotter == 1) Serial.print(" ↑");
+        _autoTuneStage++;
+      }
+      break;
+    case 5: // get t1
+      if (*_input > _atSetpoint + 0.2) {
+        _t1 = micros();
+        _autoTuneStage++;
+      }
+      break;
+    case 6: // get t2
+      _rdAvg = *_input;
+      if (_rdAvg > _peakHigh) _peakHigh = _rdAvg;
+      if ((_rdAvg < _peakLow) && (_peakHigh >= (_atSetpoint + _hysteresis))) _peakLow = _rdAvg;
+
+      if (_rdAvg > _atSetpoint + _hysteresis) {
+        _t2 = micros();
+        if (_printOrPlotter == 1) Serial.print(" ↓");
+        *_output = _atOutput - _outputStep; // shouldn't output limits be considered? SetOutputLimits() ???
+        _autoTuneStage++;
+      }
+      break;
+    case 7: // begin t3
+      _rdAvg = *_input;
+      if (_rdAvg > _peakHigh) _peakHigh = _rdAvg;
+      if ((_rdAvg < _peakLow) && (_peakHigh >= (_atSetpoint + _hysteresis))) _peakLow = _rdAvg;
+      if (_rdAvg < _atSetpoint - _hysteresis) {
+        if (_printOrPlotter == 1) Serial.print(" ↑");
+        *_output = _atOutput + _outputStep; // shouldn't output limits be considered? SetOutputLimits() ???
+        _autoTuneStage++;
+      }
+      break;
+    case 8: // get t3
+      _rdAvg = *_input;
+      if (_rdAvg > _peakHigh) _peakHigh = _rdAvg;
+      if ((_rdAvg < _peakLow) && (_peakHigh >= (_atSetpoint + _hysteresis))) _peakLow = _rdAvg;
+      if (_rdAvg > _atSetpoint + _hysteresis) {
+        _t3 = micros();
+        if (_printOrPlotter == 1) Serial.println(" Done.");
+        _autoTuneStage++;
+        _td = (float)(_t1 - _t0) / 1000000.0; // dead time (seconds)
+        _Tu = (float)(_t3 - _t2) / 1000000.0; // ultimate period (seconds)
+        _Ku = (float)(4 * _outputStep * 2) / (float)(3.14159 * sqrt (sq (_peakHigh - _peakLow) - sq (_hysteresis))); // ultimate gain
+        if (_tuningRule == 6) { //AMIGO_PID
+          (_td < 10) ? _td = 10 : _td = _td; // 10µs minimum
+          _kp = (0.2 + 0.45 * (_Tu / _td)) / _Ku;
+          float Ti = (((0.4 * _td) + (0.8 * _Tu)) / (_td + (0.1 * _Tu)) * _td);
+          float Td = (0.5 * _td * _Tu) / ((0.3 * _td) + _Tu);
+          _ki = _kp / Ti;
+          _kd = Td * _kp;
+        } else { //other rules
+          _kp = RulesContants[_tuningRule][0] / 1000.0 * _Ku;
+          _ki = RulesContants[_tuningRule][1] / 1000.0 * _Ku / _Tu;
+          _kd = RulesContants[_tuningRule][2] / 1000.0 * _Ku * _Tu;
+        }
+        // _Kp = _kp;
+        // _Ki = _ki;
+        // _Kd = _kd;
+        if (_printOrPlotter == 1) {
+          // Controllability https://blog.opticontrols.com/wp-content/uploads/2011/06/td-versus-tau.png
+          if ((_Tu / _td + 0.0001) > 0.75) Serial.println(F("This process is easy to control."));
+          else if ((_Tu / _td + 0.0001) > 0.25) Serial.println(F("This process has average controllability."));
+          else Serial.println(F("This process is difficult to control."));
+          Serial.print(F("Tu: ")); Serial.print(_Tu);    // Ultimate Period (sec)
+          Serial.print(F("  td: ")); Serial.print(_td);  // Dead Time (sec)
+          Serial.print(F("  Ku: ")); Serial.print(_Ku);  // Ultimate Gain
+          Serial.print(F("  Kp: ")); Serial.print(_kp);
+          Serial.print(F("  Ki: ")); Serial.print(_ki);
+          Serial.print(F("  Kd: ")); Serial.println(_kd);
+          Serial.println();
+        }
+      }
+      break;
+    case 9: // ready to set tunings
+    //   _autoTuneStage++;
+        return true;
+    break;
+  }
+    return false;
+}
+
+void AutoTunePID::setAutoTuneConstants(float* kp, float* ki, float* kd)
+{
+    *kp = _kp;
+    *ki = _ki;
+    *kd = _kd;
 }
