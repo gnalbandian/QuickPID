@@ -2,11 +2,24 @@
 #ifndef QuickPID_h
 #define QuickPID_h
 
+enum class tuningMethod : uint8_t
+{
+    ZIEGLER_NICHOLS_PI,
+    ZIEGLER_NICHOLS_PID,
+    TYREUS_LUYBEN_PI,
+    TYREUS_LUYBEN_PID,
+    CIANCONE_MARLIN_PI,
+    CIANCONE_MARLIN_PID,
+    AMIGOF_PID,
+    PESSEN_INTEGRAL_PID,
+    SOME_OVERSHOOT_PID,
+    NO_OVERSHOOT_PID
+};
 
 class AutoTunePID {
     public:
         AutoTunePID();
-        AutoTunePID(float *input, float *output, uint8_t tuningRule, bool printOrPlotter = false); // Should't also consider direction?
+        AutoTunePID(float *input, float *output, tuningMethod tuningRule, bool printOrPlotter = false); // Should't also consider direction?
         ~AutoTunePID(){};
 
         void reset();
@@ -21,7 +34,7 @@ class AutoTunePID {
         // float *mySetpoint = nullptr;  // to constantly tell us what these values are. With pointers we'll just know.
 
         uint8_t _autoTuneStage = 0;
-        uint8_t _tuningRule = 0;
+        tuningMethod _tuningRule;
         byte _outputStep;
         byte _hysteresis;
         int _atSetpoint;  // 1/3 of 10-bit ADC matches 8-bit PWM value of 85 for symetrical waveform
@@ -52,20 +65,6 @@ class QuickPID {
 
   public:
 
-    // enum tuningMethod : uint8_t
-    // {
-    //     ZIEGLER_NICHOLS_PI,
-    //     ZIEGLER_NICHOLS_PID,
-    //     TYREUS_LUYBEN_PI,
-    //     TYREUS_LUYBEN_PID,
-    //     CIANCONE_MARLIN_PI,
-    //     CIANCONE_MARLIN_PID,
-    //     AMIGOF_PID,
-    //     PESSEN_INTEGRAL_PID,
-    //     SOME_OVERSHOOT_PID,
-    //     NO_OVERSHOOT_PID
-    // };
-
     // controller mode
     typedef enum { MANUAL = 0, AUTOMATIC = 1 } mode_t;
 
@@ -89,7 +88,7 @@ class QuickPID {
 
     // Automatically determines and sets the tuning parameters Kp, Ki and Kd. Use this in the setup loop.
     // void AutoTune(int inputPin, int outputPin, int tuningRule, int Print, uint32_t timeout);
-    void AutoTune(uint8_t tuningRule);
+    void AutoTune(tuningMethod tuningRule);
     void clearAutoTune();
 
     // Sets and clamps the output to a specific range (0-255 by default).

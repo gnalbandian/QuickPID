@@ -205,9 +205,9 @@ int QuickPID::analogReadFast(int ADCpin) {
 # endif
 }
 
-void QuickPID::AutoTune(uint8_t tuningRule)
+void QuickPID::AutoTune(tuningMethod tuningRule)
 {
-    autoTune = new AutoTunePID(myInput, myOutput, (uint8_t)tuningRule);
+    autoTune = new AutoTunePID(myInput, myOutput, tuningRule);
 }
 
 void QuickPID::clearAutoTune()
@@ -225,7 +225,7 @@ AutoTunePID::AutoTunePID()
 
     reset();
 }
-AutoTunePID::AutoTunePID(float *input, float *output, uint8_t tuningRule, bool printOrPlotter) // TODO: Direction should also be considered for autotuning
+AutoTunePID::AutoTunePID(float *input, float *output, tuningMethod tuningRule, bool printOrPlotter) // TODO: Direction should also be considered for autotuning
 {
     AutoTunePID();
 
@@ -333,7 +333,7 @@ bool AutoTunePID::autoTuneLoop()
         _td = (float)(_t1 - _t0) / 1000000.0; // dead time (seconds)
         _Tu = (float)(_t3 - _t2) / 1000000.0; // ultimate period (seconds)
         _Ku = (float)(4 * _outputStep * 2) / (float)(3.14159 * sqrt (sq (_peakHigh - _peakLow) - sq (_hysteresis))); // ultimate gain
-        if (_tuningRule == 6) { //AMIGO_PID
+        if (_tuningRule == tuningMethod::AMIGOF_PID) { //AMIGO_PID
           (_td < 10) ? _td = 10 : _td = _td; // 10µs minimum
           _kp = (0.2 + 0.45 * (_Tu / _td)) / _Ku;
           float Ti = (((0.4 * _td) + (0.8 * _Tu)) / (_td + (0.1 * _Tu)) * _td);
@@ -341,9 +341,9 @@ bool AutoTunePID::autoTuneLoop()
           _ki = _kp / Ti;
           _kd = Td * _kp;
         } else { //other rules
-          _kp = RulesContants[_tuningRule][0] / 1000.0 * _Ku;
-          _ki = RulesContants[_tuningRule][1] / 1000.0 * _Ku / _Tu;
-          _kd = RulesContants[_tuningRule][2] / 1000.0 * _Ku * _Tu;
+          _kp = RulesContants[static_cast<uint8_t>(_tuningRule)][0] / 1000.0 * _Ku;
+          _ki = RulesContants[static_cast<uint8_t>(_tuningRule)][1] / 1000.0 * _Ku / _Tu;
+          _kd = RulesContants[static_cast<uint8_t>(_tuningRule)][2] / 1000.0 * _Ku * _Tu;
         }
         // _Kp = _kp;
         // _Ki = _ki;
