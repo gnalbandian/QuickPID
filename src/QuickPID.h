@@ -2,7 +2,6 @@
 #ifndef QuickPID_h
 #define QuickPID_h
 
-#include <RunningAverage.h>
 
 class AutoTunePID {
     public:
@@ -33,10 +32,10 @@ class AutoTunePID {
         uint32_t _t0, _t1, _t2, _t3;
         float _Ku, _Tu, _td, _kp, _ki, _kd, _rdAvg, _peakHigh, _peakLow;
 
-         const uint16_t RulesContants[10][3] =
+        const uint16_t RulesContants[10][3] =
                                 { //ckp,  cki, ckd x 1000
                                     { 450,  540,   0 },  // ZIEGLER_NICHOLS_PI
-                                    { 600, 176,  75 },  // ZIEGLER_NICHOLS_PID
+                                    { 600,  176,  75 },  // ZIEGLER_NICHOLS_PID
                                     { 313,  142,   0 },  // TYREUS_LUYBEN_PI
                                     { 454,  206,  72 },  // TYREUS_LUYBEN_PID
                                     { 303, 1212,   0 },  // CIANCONE_MARLIN_PI
@@ -46,8 +45,6 @@ class AutoTunePID {
                                     { 333,  667, 111 },  // SOME_OVERSHOOT_PID
                                     { 200,  400,  67 },  // NO_OVERSHOOT_PID
                                 };
-        
-        RunningAverage<float, 5> inputAvg;
 
 };
 
